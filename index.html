@@ -1,0 +1,988 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NEXUS HACK — Certificate Generator</title>
+
+<!-- Fonts: Playfair Display for certificate elegance, Inter for UI + certificate body -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500&family=Inter:wght@400;500;600;700&family=Cormorant+Garamond:ital@0;1&display=swap" rel="stylesheet">
+
+<!-- PDF generation libraries (client-side only) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+<style>
+  /* ============================================================
+     DESIGN TOKENS
+  ============================================================ */
+  :root{
+    --ink:        #1c2438;
+    --ink-soft:   #4a5268;
+    --paper:      #f6f7fa;
+    --panel:      #ffffff;
+    --line:       #e3e6ee;
+    --accent:     #2f4570;
+    --accent-dk:  #1c2f52;
+    --gold:       #b3894a;
+    --gold-soft:  #d9c199;
+    --ok:         #2a7a4f;
+    --err:        #b3423f;
+    --radius:     10px;
+    --shadow:     0 1px 3px rgba(28,36,56,.06), 0 8px 24px rgba(28,36,56,.06);
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body{
+    margin:0; padding:0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* ============================================================
+     APP SHELL
+  ============================================================ */
+  .app-header{
+    padding: 28px 24px 18px;
+    text-align: center;
+    border-bottom: 1px solid var(--line);
+    background: var(--panel);
+  }
+  .app-header h1{
+    margin: 0 0 4px;
+    font-size: 22px;
+    font-weight: 700;
+    letter-spacing: .2px;
+  }
+  .app-header p{
+    margin: 0;
+    color: var(--ink-soft);
+    font-size: 14px;
+  }
+
+  .layout{
+    max-width: 1360px;
+    margin: 0 auto;
+    padding: 28px 24px 60px;
+    display: grid;
+    grid-template-columns: 400px 1fr;
+    gap: 28px;
+    align-items: start;
+  }
+
+  @media (max-width: 980px){
+    .layout{
+      grid-template-columns: 1fr;
+    }
+  }
+
+  /* ============================================================
+     FORM CARD
+  ============================================================ */
+  .card{
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 22px;
+  }
+
+  .card h2{
+    margin: 0 0 4px;
+    font-size: 16px;
+    font-weight: 700;
+  }
+  .card .sub{
+    margin: 0 0 18px;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+
+  .field{ margin-bottom: 16px; }
+  .field label{
+    display: block;
+    font-size: 13px;
+    font-weight: 600;
+    margin-bottom: 6px;
+    color: var(--ink);
+  }
+  .field label .req{ color: var(--err); margin-left: 2px; }
+  .field .hint{
+    font-size: 12px;
+    color: var(--ink-soft);
+    margin-top: 5px;
+  }
+
+  input[type="text"],
+  input[type="date"],
+  select,
+  textarea{
+    width: 100%;
+    padding: 10px 12px;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--ink);
+    background: #fbfbfd;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    outline: none;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  textarea{ resize: vertical; min-height: 78px; line-height: 1.5; }
+
+  input:focus, select:focus, textarea:focus{
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px rgba(47,69,112,.12);
+    background: #fff;
+  }
+
+  input.invalid, select.invalid{
+    border-color: var(--err);
+    box-shadow: 0 0 0 3px rgba(179,66,63,.10);
+  }
+
+  .error-msg{
+    display: none;
+    font-size: 12px;
+    color: var(--err);
+    margin-top: 5px;
+  }
+  .error-msg.show{ display: block; }
+
+  /* Radio toggle for Individual / Team */
+  .toggle-row{
+    display: flex;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .toggle-btn{
+    flex: 1;
+    text-align: center;
+    padding: 9px 10px;
+    font-size: 13px;
+    font-weight: 600;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: #fbfbfd;
+    color: var(--ink-soft);
+    cursor: pointer;
+    user-select: none;
+    transition: all .15s ease;
+  }
+  .toggle-btn.active{
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #fff;
+  }
+
+  .divider{
+    height: 1px;
+    background: var(--line);
+    margin: 20px 0;
+  }
+
+  /* Buttons */
+  .btn{
+    width: 100%;
+    padding: 12px 16px;
+    font-size: 14px;
+    font-weight: 700;
+    font-family: inherit;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    transition: transform .1s ease, opacity .15s ease, box-shadow .15s ease;
+  }
+  .btn:active{ transform: translateY(1px); }
+  .btn-primary{
+    background: var(--accent-dk);
+    color: #fff;
+    box-shadow: 0 4px 14px rgba(28,47,82,.25);
+  }
+  .btn-primary:hover{ opacity: .93; }
+  .btn-secondary{
+    background: #fff;
+    color: var(--accent-dk);
+    border: 1px solid var(--line);
+    margin-top: 10px;
+  }
+  .btn-secondary:hover{ background: #f5f6fa; }
+  .btn:disabled{ opacity: .55; cursor: not-allowed; }
+
+  .btn-group{ margin-top: 22px; }
+
+  .form-status{
+    font-size: 12.5px;
+    margin-top: 10px;
+    text-align: center;
+    color: var(--ink-soft);
+  }
+  .form-status.ok{ color: var(--ok); }
+
+  /* ============================================================
+     PREVIEW PANEL
+  ============================================================ */
+  .preview-panel{
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .preview-frame{
+    width: 100%;
+    background: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 22px;
+    display: flex;
+    justify-content: center;
+  }
+
+  .preview-scale-wrap{
+    width: 100%;
+    max-width: 1000px;
+    aspect-ratio: 1000 / 707;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* ============================================================
+     CERTIFICATE  (fixed intrinsic size 1000x707 -> scaled to fit)
+  ============================================================ */
+  #certificate{
+    width: 1000px;
+    height: 707px;
+    position: absolute;
+    top: 0; left: 0;
+    transform-origin: top left;
+    background: #fffdf8;
+    font-family: 'Inter', sans-serif;
+    color: var(--ink);
+    overflow: hidden;
+  }
+
+  .cert-outer-border{
+    position: absolute;
+    inset: 16px;
+    border: 2px solid var(--gold);
+  }
+  .cert-inner-border{
+    position: absolute;
+    inset: 24px;
+    border: 1px solid var(--gold-soft);
+  }
+
+  /* corner ornaments */
+  .corner{
+    position: absolute;
+    width: 64px;
+    height: 64px;
+    z-index: 3;
+  }
+  .corner svg{ width: 100%; height: 100%; display:block; }
+  .corner.tl{ top: 16px; left: 16px; }
+  .corner.tr{ top: 16px; right: 16px; transform: scaleX(-1); }
+  .corner.bl{ bottom: 16px; left: 16px; transform: scaleY(-1); }
+  .corner.br{ bottom: 16px; right: 16px; transform: scale(-1,-1); }
+
+  .cert-content{
+    position: relative;
+    z-index: 2;
+    height: 100%;
+    padding: 58px 84px 40px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+  }
+
+  .cert-brand{
+    font-family: 'Playfair Display', serif;
+    font-weight: 700;
+    font-size: 34px;
+    letter-spacing: 6px;
+    color: var(--accent-dk);
+    margin: 0;
+  }
+  .cert-tagline{
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-size: 15px;
+    letter-spacing: 1.5px;
+    color: var(--gold);
+    margin: 4px 0 0;
+  }
+
+  .cert-ornament-divider{
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 18px 0 16px;
+    width: 260px;
+  }
+  .cert-ornament-divider .line{
+    flex: 1;
+    height: 1px;
+    background: var(--gold-soft);
+  }
+  .cert-ornament-divider .diamond{
+    width: 7px; height: 7px;
+    background: var(--gold);
+    transform: rotate(45deg);
+  }
+
+  .cert-type{
+    font-size: 13px;
+    font-weight: 700;
+    letter-spacing: 4px;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    margin: 0 0 26px;
+  }
+
+  .cert-presented-to{
+    font-size: 14px;
+    color: var(--ink-soft);
+    margin: 0 0 8px;
+    letter-spacing: .5px;
+  }
+
+  .cert-name{
+    font-family: 'Playfair Display', serif;
+    font-weight: 600;
+    font-style: italic;
+    color: var(--accent-dk);
+    margin: 0 0 6px;
+    line-height: 1.15;
+    max-width: 780px;
+    overflow-wrap: break-word;
+    transition: font-size .1s ease;
+  }
+  .cert-name-underline{
+    width: 260px;
+    height: 1px;
+    background: var(--gold);
+    margin-bottom: 20px;
+  }
+
+  .cert-body{
+    font-size: 15px;
+    line-height: 1.75;
+    color: var(--ink);
+    max-width: 660px;
+    margin: 0 0 6px;
+  }
+  .cert-body b{ color: var(--accent-dk); }
+
+  .cert-stage{
+    font-size: 13px;
+    letter-spacing: 1px;
+    color: var(--gold);
+    font-weight: 600;
+    margin: 10px 0 0;
+    text-transform: uppercase;
+  }
+
+  .cert-team{
+    margin-top: 14px;
+    max-width: 640px;
+  }
+  .cert-team-label{
+    font-size: 11px;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--ink-soft);
+    margin: 0 0 6px;
+  }
+  .cert-team-names{
+    font-size: 13.5px;
+    color: var(--ink);
+    line-height: 1.6;
+  }
+
+  .cert-spacer{ flex: 1; }
+
+  .cert-footer{
+    width: 100%;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-end;
+    padding-top: 10px;
+  }
+
+  .cert-footer-block{
+    text-align: center;
+    min-width: 180px;
+  }
+  .cert-footer-line{
+    width: 170px;
+    height: 1px;
+    background: var(--ink-soft);
+    margin: 0 auto 6px;
+  }
+  .cert-footer-label{
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+  }
+  .cert-footer-value{
+    font-family: 'Playfair Display', serif;
+    font-size: 15px;
+    font-style: italic;
+    color: var(--accent-dk);
+    margin-bottom: 4px;
+  }
+
+  .cert-seal{
+    width: 72px;
+    height: 72px;
+  }
+
+  /* ============================================================
+     PRINT STYLES
+  ============================================================ */
+  @media print{
+    body *{ visibility: hidden; }
+    .print-area, .print-area *{ visibility: visible; }
+    .print-area{
+      position: fixed;
+      top: 0; left: 0;
+      margin: 0;
+      padding: 0;
+      width: 100vw;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: #fff;
+    }
+    #certificate.print-clone{
+      position: static;
+      transform: none !important;
+      box-shadow: none;
+    }
+    @page{
+      size: landscape;
+      margin: 0;
+    }
+  }
+</style>
+</head>
+<body>
+
+<header class="app-header">
+  <h1>NEXUS HACK — Certificate Generator</h1>
+  <p>Where Ideas Become Reality · Create and download official participation &amp; achievement certificates</p>
+</header>
+
+<div class="layout">
+
+  <!-- ============================================================
+       LEFT: FORM
+  ============================================================ -->
+  <section class="card" aria-label="Certificate details form">
+    <h2>Certificate Details</h2>
+    <p class="sub">Fill in the details below — the certificate updates live.</p>
+
+    <div class="field">
+      <label for="participantName">Participant Name <span class="req">*</span></label>
+      <input type="text" id="participantName" placeholder="e.g. Aman Sharma" maxlength="60">
+      <div class="error-msg" id="err-name">Please enter the participant's name.</div>
+    </div>
+
+    <div class="field">
+      <label for="certDate">Certificate Date <span class="req">*</span></label>
+      <input type="date" id="certDate">
+      <div class="error-msg" id="err-date">Please select a date.</div>
+    </div>
+
+    <div class="field">
+      <label for="certType">Certificate Type / Achievement <span class="req">*</span></label>
+      <select id="certType">
+        <option value="">Select achievement...</option>
+        <option value="participation">Participation</option>
+        <option value="first">First Place</option>
+        <option value="second">Second Place</option>
+        <option value="third">Third Place</option>
+      </select>
+      <div class="error-msg" id="err-type">Please select a certificate type.</div>
+    </div>
+
+    <div class="field">
+      <label for="stageSelect">Round / Stage Reached</label>
+      <select id="stageSelect">
+        <option value="">None (don't show on certificate)</option>
+        <option value="Participant">Participant</option>
+        <option value="Shortlisted">Shortlisted</option>
+        <option value="Finalist">Finalist</option>
+        <option value="Winner">Winner</option>
+        <option value="custom">Custom...</option>
+      </select>
+      <input type="text" id="stageCustom" placeholder="Enter custom stage" style="display:none; margin-top:8px;" maxlength="40">
+      <div class="hint">Optional — shown only if selected.</div>
+    </div>
+
+    <div class="divider"></div>
+
+    <div class="field">
+      <label>Participation Mode</label>
+      <div class="toggle-row">
+        <div class="toggle-btn active" id="btn-individual" data-mode="individual">Individual Participant</div>
+        <div class="toggle-btn" id="btn-team" data-mode="team">Team / Co-Participants</div>
+      </div>
+    </div>
+
+    <div class="field" id="teamField" style="display:none;">
+      <label for="teamNames">Team / Co-Participant Names</label>
+      <textarea id="teamNames" placeholder="One name per line, e.g.&#10;Rahul Verma&#10;Priya Singh"></textarea>
+      <div class="hint">Optional — one name per line.</div>
+    </div>
+
+    <div class="btn-group">
+      <button class="btn btn-primary" id="downloadBtn">Download Certificate PDF</button>
+      <button class="btn btn-secondary" id="printBtn">Print Certificate</button>
+      <div class="form-status" id="formStatus"></div>
+    </div>
+  </section>
+
+  <!-- ============================================================
+       RIGHT: LIVE PREVIEW
+  ============================================================ -->
+  <section class="preview-panel" aria-label="Certificate live preview">
+    <div class="preview-frame">
+      <div class="preview-scale-wrap" id="scaleWrap">
+
+        <!-- ============ CERTIFICATE ============ -->
+        <div id="certificate">
+          <div class="cert-outer-border"></div>
+          <div class="cert-inner-border"></div>
+
+          <!-- corner ornaments -->
+          <div class="corner tl">
+            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 40 V12 Q4 4 12 4 H40" stroke="#b3894a" stroke-width="2"/>
+              <circle cx="4" cy="4" r="3" fill="#b3894a"/>
+            </svg>
+          </div>
+          <div class="corner tr">
+            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 40 V12 Q4 4 12 4 H40" stroke="#b3894a" stroke-width="2"/>
+              <circle cx="4" cy="4" r="3" fill="#b3894a"/>
+            </svg>
+          </div>
+          <div class="corner bl">
+            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 40 V12 Q4 4 12 4 H40" stroke="#b3894a" stroke-width="2"/>
+              <circle cx="4" cy="4" r="3" fill="#b3894a"/>
+            </svg>
+          </div>
+          <div class="corner br">
+            <svg viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <path d="M4 40 V12 Q4 4 12 4 H40" stroke="#b3894a" stroke-width="2"/>
+              <circle cx="4" cy="4" r="3" fill="#b3894a"/>
+            </svg>
+          </div>
+
+          <div class="cert-content">
+            <p class="cert-brand">NEXUS HACK</p>
+            <p class="cert-tagline">Where Ideas Become Reality</p>
+
+            <div class="cert-ornament-divider">
+              <div class="line"></div><div class="diamond"></div><div class="line"></div>
+            </div>
+
+            <p class="cert-type" id="outType">CERTIFICATE OF PARTICIPATION</p>
+
+            <p class="cert-presented-to">This certificate is proudly presented to</p>
+            <h2 class="cert-name" id="outName" style="font-size:44px;">Participant Name</h2>
+            <div class="cert-name-underline"></div>
+
+            <p class="cert-body" id="outBody">
+              for successfully participating in <b>NEXUS HACK</b> — Where Ideas Become Reality.
+            </p>
+
+            <p class="cert-stage" id="outStage" style="display:none;"></p>
+
+            <div class="cert-team" id="outTeamWrap" style="display:none;">
+              <p class="cert-team-label">Team Members</p>
+              <p class="cert-team-names" id="outTeamNames"></p>
+            </div>
+
+            <div class="cert-spacer"></div>
+
+            <div class="cert-footer">
+              <div class="cert-footer-block">
+                <div class="cert-footer-value" id="outDate">—</div>
+                <div class="cert-footer-line"></div>
+                <div class="cert-footer-label">Date</div>
+              </div>
+
+              <div class="cert-seal">
+                <svg viewBox="0 0 72 72" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <circle cx="36" cy="36" r="34" stroke="#b3894a" stroke-width="1.5"/>
+                  <circle cx="36" cy="36" r="27" stroke="#b3894a" stroke-width="1"/>
+                  <path d="M36 14 L39.5 26 L52 26 L42 33.5 L45.5 45.5 L36 38 L26.5 45.5 L30 33.5 L20 26 L32.5 26 Z" fill="#d9c199"/>
+                </svg>
+              </div>
+
+              <div class="cert-footer-block">
+                <div class="cert-footer-value">Event Organizer</div>
+                <div class="cert-footer-line"></div>
+                <div class="cert-footer-label">NEXUS HACK Team</div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <!-- ============ /CERTIFICATE ============ -->
+
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ============================================================
+     ELEMENT REFERENCES
+  ============================================================ */
+  const els = {
+    name: document.getElementById('participantName'),
+    date: document.getElementById('certDate'),
+    type: document.getElementById('certType'),
+    stageSelect: document.getElementById('stageSelect'),
+    stageCustom: document.getElementById('stageCustom'),
+    teamNames: document.getElementById('teamNames'),
+    teamField: document.getElementById('teamField'),
+    btnIndividual: document.getElementById('btn-individual'),
+    btnTeam: document.getElementById('btn-team'),
+    downloadBtn: document.getElementById('downloadBtn'),
+    printBtn: document.getElementById('printBtn'),
+    formStatus: document.getElementById('formStatus'),
+    scaleWrap: document.getElementById('scaleWrap'),
+    certificate: document.getElementById('certificate'),
+    // certificate outputs
+    outType: document.getElementById('outType'),
+    outName: document.getElementById('outName'),
+    outBody: document.getElementById('outBody'),
+    outStage: document.getElementById('outStage'),
+    outTeamWrap: document.getElementById('outTeamWrap'),
+    outTeamNames: document.getElementById('outTeamNames'),
+    outDate: document.getElementById('outDate'),
+    // errors
+    errName: document.getElementById('err-name'),
+    errDate: document.getElementById('err-date'),
+    errType: document.getElementById('err-type'),
+  };
+
+  let participationMode = 'individual'; // 'individual' | 'team'
+
+  /* ============================================================
+     ACHIEVEMENT COPY
+  ============================================================ */
+  const ACHIEVEMENT = {
+    participation: {
+      heading: 'CERTIFICATE OF PARTICIPATION',
+      phrase: 'for successfully participating in'
+    },
+    first: {
+      heading: 'CERTIFICATE OF ACHIEVEMENT',
+      phrase: 'for securing First Place in'
+    },
+    second: {
+      heading: 'CERTIFICATE OF ACHIEVEMENT',
+      phrase: 'for securing Second Place in'
+    },
+    third: {
+      heading: 'CERTIFICATE OF ACHIEVEMENT',
+      phrase: 'for securing Third Place in'
+    }
+  };
+
+  /* ============================================================
+     HELPERS
+  ============================================================ */
+  function formatDate(isoStr){
+    if(!isoStr) return '—';
+    const parts = isoStr.split('-');
+    if(parts.length !== 3) return '—';
+    const d = new Date(parseInt(parts[0]), parseInt(parts[1]) - 1, parseInt(parts[2]));
+    if(isNaN(d.getTime())) return '—';
+    const opts = { day: 'numeric', month: 'long', year: 'numeric' };
+    return d.toLocaleDateString('en-US', opts);
+  }
+
+  function sanitizeFilename(str){
+    return str
+      .trim()
+      .replace(/[^a-zA-Z0-9\s-]/g, '')
+      .replace(/\s+/g, '-');
+  }
+
+  function escapeHTML(str){
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  // Auto-shrink the participant name so it never overflows the certificate.
+  function fitNameFontSize(){
+    const el = els.outName;
+    let size = 44;
+    el.style.fontSize = size + 'px';
+    const maxWidth = 780;
+    // reduce until it fits within max width (single line) or hits floor
+    while(el.scrollWidth > maxWidth && size > 22){
+      size -= 1;
+      el.style.fontSize = size + 'px';
+    }
+  }
+
+  /* ============================================================
+     LIVE UPDATE
+  ============================================================ */
+  function updateCertificate(){
+    // Name
+    const nameVal = els.name.value.trim();
+    els.outName.textContent = nameVal || 'Participant Name';
+    fitNameFontSize();
+
+    // Date
+    els.outDate.textContent = formatDate(els.date.value);
+
+    // Achievement type
+    const typeVal = els.type.value;
+    const info = ACHIEVEMENT[typeVal] || ACHIEVEMENT.participation;
+    els.outType.textContent = info.heading;
+    els.outBody.innerHTML = `${info.phrase} <b>NEXUS HACK</b> — Where Ideas Become Reality.`;
+
+    // Stage
+    const stageVal = getStageValue();
+    if(stageVal){
+      els.outStage.style.display = '';
+      els.outStage.textContent = stageVal;
+    } else {
+      els.outStage.style.display = 'none';
+    }
+
+    // Team
+    if(participationMode === 'team'){
+      const names = els.teamNames.value
+        .split('\n')
+        .map(n => n.trim())
+        .filter(Boolean);
+      if(names.length){
+        els.outTeamWrap.style.display = '';
+        els.outTeamNames.textContent = names.join('  ·  ');
+      } else {
+        els.outTeamWrap.style.display = 'none';
+      }
+    } else {
+      els.outTeamWrap.style.display = 'none';
+    }
+  }
+
+  function getStageValue(){
+    if(els.stageSelect.value === 'custom'){
+      return els.stageCustom.value.trim();
+    }
+    return els.stageSelect.value;
+  }
+
+  /* ============================================================
+     RESPONSIVE SCALING OF CERTIFICATE PREVIEW
+  ============================================================ */
+  function scalePreview(){
+    const wrap = els.scaleWrap;
+    const scale = wrap.clientWidth / 1000;
+    els.certificate.style.transform = `scale(${scale})`;
+  }
+
+  window.addEventListener('resize', scalePreview);
+
+  /* ============================================================
+     MODE TOGGLE (Individual / Team)
+  ============================================================ */
+  function setMode(mode){
+    participationMode = mode;
+    els.btnIndividual.classList.toggle('active', mode === 'individual');
+    els.btnTeam.classList.toggle('active', mode === 'team');
+    els.teamField.style.display = mode === 'team' ? '' : 'none';
+    updateCertificate();
+  }
+  els.btnIndividual.addEventListener('click', () => setMode('individual'));
+  els.btnTeam.addEventListener('click', () => setMode('team'));
+
+  /* ============================================================
+     STAGE CUSTOM INPUT TOGGLE
+  ============================================================ */
+  els.stageSelect.addEventListener('change', () => {
+    els.stageCustom.style.display = els.stageSelect.value === 'custom' ? '' : 'none';
+    updateCertificate();
+  });
+  els.stageCustom.addEventListener('input', updateCertificate);
+
+  /* ============================================================
+     LIVE LISTENERS
+  ============================================================ */
+  [els.name, els.date, els.type, els.teamNames].forEach(el => {
+    el.addEventListener('input', updateCertificate);
+    el.addEventListener('change', updateCertificate);
+  });
+
+  /* ============================================================
+     VALIDATION
+  ============================================================ */
+  function clearErrors(){
+    [els.name, els.date, els.type].forEach(el => el.classList.remove('invalid'));
+    [els.errName, els.errDate, els.errType].forEach(el => el.classList.remove('show'));
+  }
+
+  function validate(){
+    clearErrors();
+    let valid = true;
+
+    if(!els.name.value.trim()){
+      els.name.classList.add('invalid');
+      els.errName.classList.add('show');
+      valid = false;
+    }
+    if(!els.date.value){
+      els.date.classList.add('invalid');
+      els.errDate.classList.add('show');
+      valid = false;
+    }
+    if(!els.type.value){
+      els.type.classList.add('invalid');
+      els.errType.classList.add('show');
+      valid = false;
+    }
+    return valid;
+  }
+
+  /* ============================================================
+     PDF DOWNLOAD
+  ============================================================ */
+  async function downloadPDF(){
+    if(!validate()){
+      els.formStatus.textContent = 'Please fill in the required fields above.';
+      els.formStatus.classList.remove('ok');
+      return;
+    }
+    updateCertificate();
+
+    els.downloadBtn.disabled = true;
+    els.formStatus.classList.remove('ok');
+    els.formStatus.textContent = 'Generating your PDF…';
+
+    try{
+      // Render certificate at full (unscaled) resolution off-screen scale=1
+      const el = els.certificate;
+      const prevTransform = el.style.transform;
+      el.style.transform = 'scale(1)';
+
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        backgroundColor: '#fffdf8',
+        width: 1000,
+        height: 707
+      });
+
+      el.style.transform = prevTransform;
+
+      const imgData = canvas.toDataURL('image/png', 1.0);
+      const { jsPDF } = window.jspdf;
+      const pdf = new jsPDF({
+        orientation: 'landscape',
+        unit: 'mm',
+        format: 'a4'
+      });
+
+      // A4 landscape = 297 x 210 mm. Certificate ratio 1000:707 ≈ 1.4144
+      const pageW = 297;
+      const pageH = 210;
+      const ratio = 1000 / 707;
+      let drawW = pageW;
+      let drawH = drawW / ratio;
+      if(drawH > pageH){
+        drawH = pageH;
+        drawW = drawH * ratio;
+      }
+      const offsetX = (pageW - drawW) / 2;
+      const offsetY = (pageH - drawH) / 2;
+
+      pdf.addImage(imgData, 'PNG', offsetX, offsetY, drawW, drawH);
+
+      const rawName = els.name.value.trim() || 'Participant';
+      const filename = `NEXUS-HACK-Certificate-${sanitizeFilename(rawName)}.pdf`;
+      pdf.save(filename);
+
+      els.formStatus.textContent = 'Certificate downloaded successfully.';
+      els.formStatus.classList.add('ok');
+    } catch(e){
+      console.error(e);
+      els.formStatus.textContent = 'Something went wrong generating the PDF. Please try again.';
+      els.formStatus.classList.remove('ok');
+    } finally {
+      els.downloadBtn.disabled = false;
+    }
+  }
+
+  els.downloadBtn.addEventListener('click', downloadPDF);
+
+  /* ============================================================
+     PRINT
+  ============================================================ */
+  function printCertificate(){
+    if(!validate()){
+      els.formStatus.textContent = 'Please fill in the required fields above.';
+      els.formStatus.classList.remove('ok');
+      return;
+    }
+    updateCertificate();
+
+    // Build a temporary full-resolution, unscaled clone for printing.
+    const clone = els.certificate.cloneNode(true);
+    clone.classList.add('print-clone');
+    clone.style.position = 'static';
+    clone.style.transform = 'none';
+
+    const printArea = document.createElement('div');
+    printArea.className = 'print-area';
+    printArea.appendChild(clone);
+    document.body.appendChild(printArea);
+
+    window.print();
+
+    // Clean up after the print dialog closes.
+    setTimeout(() => {
+      document.body.removeChild(printArea);
+    }, 500);
+  }
+
+  els.printBtn.addEventListener('click', printCertificate);
+
+  /* ============================================================
+     INIT
+  ============================================================ */
+  scalePreview();
+  updateCertificate();
+})();
+</script>
+
+</body>
+</html>
